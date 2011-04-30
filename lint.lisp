@@ -68,6 +68,16 @@
 #+symbolics
 (defprop deflint "Portability style checker" si:definition-type-name)
 
+(progn
+  ;; test helpers
+  (defmacro warn-to-string (expr)
+    `(with-output-to-string (*error-output*)
+       ,expr))
+
+  (defmacro setup-test (&body body)
+    `(progn ,@body))
+  )
+
 (defmacro deflint (function-name arglist &body body &aux (arg-var (gensym "ARGL")))
   "Defines a portability style checker.
 FUNCTION-NAME is the name of a function, macro, or special form, whose invocation
@@ -78,11 +88,7 @@ string indicating what is wrong (this will be used in the compiler warning).
 The body can access the parameters specified in arglist, as well as the variable
 named ARGLIST, which holds the entire argument list."
   `(progn
-     ;(record-source-file-name ',function-name 'deflint)
-     ;(defun (compiler:style-checker lint ,function-name) (,arg-var)
-     (style-checker-1:put-style-checker
-      ',function-name
-      'lint
+     (style-checker-1:put-style-checker ',function-name 'lint
       (lambda (,arg-var)
         (when (and *check-portability*
                    (or (null *package*)
@@ -98,12 +104,46 @@ named ARGLIST, which holds the entire argument list."
             (when result
               (lint-warn ,arg-var result))))))))
 
+(def-suite deflint :in lint)
+
+(in-suite deflint)
+
+(test deflint-rest
+  (setup-test
+    (style-checker-1:clear-style-checker-suite 'foo 'lint)
+    (deflint foo (&rest form)
+      (format nil "test1: ~S" form)))
+  (is (string=
+       "STYLE-WARNING: Non-portable code: NIL
+  test1: NIL
+"
+       (warn-to-string
+        (style-checker-1:call-style-checkers 'foo () )))))
+
+(test deflint-a-b-rest
+  (setup-test
+    (style-checker-1:clear-style-checker-suite 'foo 'lint)
+    (deflint foo (a b &rest form)
+      (format nil "test2 ~S ~S ~S" a b form)))
+  (is (string=
+       "STYLE-WARNING: Non-portable code: (A B C D E)
+  test2 B C (D E)
+"
+       (warn-to-string
+        (style-checker-1:call-style-checkers 'foo '(a b c d e))) )))
 
 (defun lint-warn (form complaint)
-;  (warn "Non-portable code: ~S~%  ~~A~" form complaint)
   #-sbcl (warn "Non-portable code: ~S~%  ~A" form complaint)
   #+sbcl (sb-c::compiler-style-warn "Non-portable code: ~S~%  ~A" form complaint))
+
+(test lint-warn
+  (is (string= (warn-to-string (lint-warn "form" "complaint"))
+                 "STYLE-WARNING: Non-portable code: \"form\"
+  complaint
+")))
+
 
+(in-suite lint)
 
 ;(defprop defscl "Portability Style Checker" si:definition-type-name)
 
