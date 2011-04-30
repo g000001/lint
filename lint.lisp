@@ -48,11 +48,12 @@
 ;;;
 #| *************** END OF CHANGE LOG ***************|#
 
-(in-package "LINT" :use "SYMBOLICS-COMMON-LISP")
 
-(export '(*check-portability* *check-loop-portability* *check-function*
-	  deflint deflint-bad-optional deflint-bad-keywords
-	  defscl) 'lint)
+(cl:in-package :lint-internal)
+
+(def-suite lint)
+
+(in-suite lint)
 
 (defvar *check-portability* t
   "Controls whether the Common Lisp portability checker is invoked.")
@@ -64,6 +65,7 @@
 	      (list (find-package "SYMBOLICS-COMMON-LISP")
 		    (find-package "ZETALISP")))
 
+#+symbolics
 (defprop deflint "Portability style checker" si:definition-type-name)
 
 (defmacro deflint (function-name arglist &body body &aux (arg-var (gensym "ARGL")))
@@ -76,30 +78,37 @@ string indicating what is wrong (this will be used in the compiler warning).
 The body can access the parameters specified in arglist, as well as the variable
 named ARGLIST, which holds the entire argument list."
   `(progn
-     (record-source-file-name ',function-name 'deflint)
-     (defun (compiler:style-checker lint ,function-name) (,arg-var)
-       (declare (sys:function-parent ,function-name deflint))
-       (when (and *check-portability*
-		  (or (null *package*)
-		      (null
+     ;(record-source-file-name ',function-name 'deflint)
+     ;(defun (compiler:style-checker lint ,function-name) (,arg-var)
+     (style-checker-1:put-style-checker
+      ',function-name
+      'lint
+      (lambda (,arg-var)
+        (when (and *check-portability*
+                   (or (null *package*)
+                       (null
 			(intersection *nonportable-packages*
-				    (package-use-list *package*)))))
-	 (let* ((arglist (cdr ,arg-var))
-		(result
+                                      (package-use-list *package*)))))
+          (let* ((arglist (cdr ,arg-var))
+                 (result
 		  (block ,function-name
 		    (apply #'(lambda ,arglist
 			       .,body)
 			   arglist))))
-	   (when result
-	     (lint-warn ,arg-var result)))))))
+            (when result
+              (lint-warn ,arg-var result))))))))
+
 
 (defun lint-warn (form complaint)
-  (warn "Non-portable code: ~S~%  ~~A~" form complaint))
+;  (warn "Non-portable code: ~S~%  ~~A~" form complaint)
+  #-sbcl (warn "Non-portable code: ~S~%  ~A" form complaint)
+  #+sbcl (sb-c::compiler-style-warn "Non-portable code: ~S~%  ~A" form complaint))
 
-(defprop defscl "Portability Style Checker" si:definition-type-name)
+
+;(defprop defscl "Portability Style Checker" si:definition-type-name)
 
 (defmacro defscl (function-name)
-  `(progn (record-source-file-name ',function-name 'defscl)
+  `(progn ;(record-source-file-name ',function-name 'defscl)
 	  (deflint ,function-name (&rest ignore)
 	    (format nil "~S isn't in Common Lisp." ',function-name))))
 
@@ -116,22 +125,22 @@ named ARGLIST, which holds the entire argument list."
 			       '(&optional))
 		   opt-arglist)))
     `(deflint ,function-name ,new-arglist
-       (declare (sys:function-parent ,function-name deflint-bad-optional))
+;       (declare (sys:function-parent ,function-name deflint-bad-optional))
        (cond ,@cond-clauses
 	     (t (progn .,body))))))
 
-(defprop deflint-bad-optional "Portability Style Checker" si:definition-type-name)
+;(defprop deflint-bad-optional "Portability Style Checker" si:definition-type-name)
 
 (defmacro deflint-bad-keywords (function-name arglist bad-keys &body body)
   (let* ((key-arglist
 	   (loop for key in bad-keys
-		 collect `((,(intern (symbol-name key) sys:pkg-keyword-package) ignore)
+		 collect `((,(intern (symbol-name key) :keyword) ignore)
 			   nil ,key)))
 	 (cond-clauses
 	   (loop for key in bad-keys
 		 collect `(,key
 			   ,(format nil "~S argument to ~S is nonstandard."
-				    (intern (symbol-name key) sys:pkg-keyword-package)
+				    (intern (symbol-name key) :keyword)
 				    function-name))))
 	 (new-arglist
 	   (append arglist (if (member '&key arglist) nil
@@ -141,7 +150,7 @@ named ARGLIST, which holds the entire argument list."
        (cond ,@cond-clauses
 	     (t (progn .,body))))))
 
-(defprop deflint-bad-keywords "Portability Style Checker" si:definition-type-name)
+;(defprop deflint-bad-keywords "Portability Style Checker" si:definition-type-name)
 
 
 ;;; The following section of this file is DEFLINT forms for functions defined in
@@ -162,9 +171,9 @@ named ARGLIST, which holds the entire argument list."
 (defvar *check-function* t
   "Set to NIL to disable checking for non-portable FUNCTION arguments.")
 
-(si:advise-permanently flavor::compose-method-combination :around function-lint-kludge nil
-  (let ((*check-function* nil))
-    :do-it))
+;(si:advise-permanently flavor::compose-method-combination :around function-lint-kludge nil
+;  (let ((*check-function* nil))
+;    :do-it))
 
 (deflint function (arg)
   (and *check-function*
@@ -175,10 +184,12 @@ named ARGLIST, which holds the entire argument list."
 		;; DEFSTRUCT, and (:property <x> lt::setf-method-internal) generated
 		;; by DEFINE-SETF-METHOD
 		(and (eq (car arg) ':property)
-		     (member (third arg) '(named-structure-invoke lt::setf-method-internal)))
+                     ;; lt ???
+		     #|(member (third arg) '(named-structure-invoke lt::setf-method-internal))|#)
 		;; (zl:named-lambda (:print-self) ...) is generated by DEFSTRUCT.
-		(and (eq (car arg) 'zl:named-lambda)
-		     (equal (cadr arg) '(:print-self)))))
+                ;; ???
+		#|(and (eq (car arg) 'zl:named-lambda)
+		     (equal (cadr arg) '(:print-self)))|#))
        (format nil "~S is not a symbol or lambda-expression." arg)))
 
 (deflint-bad-optional get-setf-method (ignore) (for-effect))
@@ -200,7 +211,7 @@ named ARGLIST, which holds the entire argument list."
 	 (null (cdr var))
 	 (return (format nil "No value specified in binding ~S." var)))))
 
-(deflint if (ignore ignore &optional ignore &rest extra)
+(deflint if (#:ignore #:ignore &optional #:ignore &rest extra)
   (when extra
     "Too many else clauses in IF form."))
 
@@ -212,9 +223,15 @@ named ARGLIST, which holds the entire argument list."
 
 (deflint-bad-optional macroexpand-1 (ignore &optional ignore) (dont-expand-special-forms))
 
+#|(deflint the (type-spec ignore)
+  (if (nth-value 1 (ignore-errors
+                     (find-class type-spec)))	;signals an error if type-spec invalid
+      (format nil "~S is not a known type specifier." type-spec)
+      (values)))|#
+
 (deflint the (type-spec ignore)
   (unless (ignore-errors
-	    (progn (cli::type-expand type-spec)	;signals an error if type-spec invalid
+	    (progn #|(cli::type-expand type-spec)|#	;signals an error if type-spec invalid
 		   t))
     (format nil "~S is not a known type specifier." type-spec)))
 
@@ -354,7 +371,7 @@ named ARGLIST, which holds the entire argument list."
 
 ;;; This will actually generate two warnings, one from this and one from OPEN.
 (deflint with-open-file (open-args &rest ignore)
-  (zl:destructuring-bind (ignore ignore &rest keywords) open-args
+  (destructuring-bind (ignore ignore &rest keywords) open-args
     (loop for keyword in keywords by #'cddr
 	  unless (member keyword '(:direction :element-type :if-exists :if-does-not-exist))
 	    return (format nil "Nonstandard OPEN keyword ~S." keyword)

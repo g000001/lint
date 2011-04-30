@@ -4,6 +4,7 @@
 
 (defsystem :lint
   :serial t
+  :depends-on (:style-checker-1)
   :components ((:file "package")
                (:file "lint")))
 
