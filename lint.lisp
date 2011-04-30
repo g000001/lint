@@ -88,7 +88,7 @@ string indicating what is wrong (this will be used in the compiler warning).
 The body can access the parameters specified in arglist, as well as the variable
 named ARGLIST, which holds the entire argument list."
   `(progn
-     (style-checker-1:put-style-checker ',function-name 'lint
+     (put-style-checker ',function-name 'lint
       (lambda (,arg-var)
         (when (and *check-portability*
                    (or (null *package*)
@@ -110,7 +110,7 @@ named ARGLIST, which holds the entire argument list."
 
 (test deflint-rest
   (setup-test
-    (style-checker-1:clear-style-checker-suite 'foo 'lint)
+    (clear-style-checker-suite 'foo 'lint)
     (deflint foo (&rest form)
       (format nil "test1: ~S" form)))
   (is (string=
@@ -118,11 +118,11 @@ named ARGLIST, which holds the entire argument list."
   test1: NIL
 "
        (warn-to-string
-        (style-checker-1:call-style-checkers 'foo () )))))
+        (call-style-checkers 'foo () )))))
 
 (test deflint-a-b-rest
   (setup-test
-    (style-checker-1:clear-style-checker-suite 'foo 'lint)
+    (clear-style-checker-suite 'foo 'lint)
     (deflint foo (a b &rest form)
       (format nil "test2 ~S ~S ~S" a b form)))
   (is (string=
@@ -130,7 +130,7 @@ named ARGLIST, which holds the entire argument list."
   test2 B C (D E)
 "
        (warn-to-string
-        (style-checker-1:call-style-checkers 'foo '(a b c d e))) )))
+        (call-style-checkers 'foo '(a b c d e))) )))
 
 (defun lint-warn (form complaint)
   #-sbcl (warn "Non-portable code: ~S~%  ~A" form complaint)
@@ -145,17 +145,28 @@ named ARGLIST, which holds the entire argument list."
 
 (in-suite lint)
 
-;(defprop defscl "Portability Style Checker" si:definition-type-name)
-
 (defmacro defscl (function-name)
-  `(progn ;(record-source-file-name ',function-name 'defscl)
-	  (deflint ,function-name (&rest ignore)
-	    (format nil "~S isn't in Common Lisp." ',function-name))))
+  ;; Def Symbolics Common Lisp ?
+  `(progn
+     (deflint ,function-name (&rest ignore)
+       (declare (ignore ignore))
+       (format nil "~S isn't in Common Lisp." ',function-name))))
+
+(test defscl
+  (setup-test
+    (clear-style-checker-suite 'foo 'lint)
+    (defscl foo))
+  (is (string=
+       "STYLE-WARNING: Non-portable code: NIL
+  FOO isn't in Common Lisp.
+"
+       (warn-to-string
+        (call-style-checkers 'foo () )))))
 
 (defmacro deflint-bad-optional (function-name arglist bad-optionals &body body)
   (let* ((opt-arglist
 	   (loop for option in bad-optionals
-		 collect `(ignore nil ,option)))
+		 collect `(,(gensym "IGNORE-") nil ,option)))
 	 (cond-clauses
 	   (loop for option in bad-optionals
 		 collect `(,option
@@ -165,16 +176,27 @@ named ARGLIST, which holds the entire argument list."
 			       '(&optional))
 		   opt-arglist)))
     `(deflint ,function-name ,new-arglist
-;       (declare (sys:function-parent ,function-name deflint-bad-optional))
+       ;; (declare (sys:function-parent ,function-name deflint-bad-optional))
        (cond ,@cond-clauses
 	     (t (progn .,body))))))
 
-;(defprop deflint-bad-optional "Portability Style Checker" si:definition-type-name)
+(test deflint-bad-optional
+  (setup-test
+    (clear-style-checker-suite 'functionp 'lint)
+    (deflint-bad-optional functionp (ignore) (allow-special-forms)))
+  (is (string=
+       (warn-to-string
+        (call-style-checkers 'functionp
+                             '(functionp &optional allow-special-forms) ))
+       "STYLE-WARNING: Non-portable code: (FUNCTIONP &OPTIONAL ALLOW-SPECIAL-FORMS)
+  ALLOW-SPECIAL-FORMS argument to FUNCTIONP is nonstandard.
+"
+       )))
 
 (defmacro deflint-bad-keywords (function-name arglist bad-keys &body body)
   (let* ((key-arglist
 	   (loop for key in bad-keys
-		 collect `((,(intern (symbol-name key) :keyword) ignore)
+		 collect `((,(intern (symbol-name key) :keyword) ,(gensym "IGNORE-"))
 			   nil ,key)))
 	 (cond-clauses
 	   (loop for key in bad-keys
@@ -190,23 +212,57 @@ named ARGLIST, which holds the entire argument list."
        (cond ,@cond-clauses
 	     (t (progn .,body))))))
 
-;(defprop deflint-bad-keywords "Portability Style Checker" si:definition-type-name)
-
+(test deflint-bad-keywords
+  (setup-test
+    (clear-style-checker-suite 'make-sequence 'lint)
+    (deflint-bad-keywords make-sequence
+                          (#:ignore #:ignore &key ((:initial-element #:ignore)))
+                          (area)))
+  (is (string=
+       (warn-to-string
+        (call-style-checkers 'make-sequence
+                             '(make-sequence 1 2 :initial-element 8 :area 3) ))
+       "STYLE-WARNING: Non-portable code: (MAKE-SEQUENCE 1 2 :INITIAL-ELEMENT 8 :AREA 3)
+  :AREA argument to MAKE-SEQUENCE is nonstandard.
+"
+       )))
 
 ;;; The following section of this file is DEFLINT forms for functions defined in
 ;;; CLtL, in the order that their descriptions appear.
 
+(clear-all-style-checkers)
+
 ;;; This won't get invoked because top-level forms aren't style-checked, sigh...
 (deflint defun (name lambda-list &rest ignore)
+  (declare (ignore ignore))
   (cond ((not (symbolp name))
 	 (format nil "Function name ~S is not a symbol." name))
 	((not (listp lambda-list))
 	 (format nil "Function argument list ~S is not a list." lambda-list))))
 
+(test defun
+  (is-false (call-style-checkers 'defun
+                                 '(defun foo () )))
+  (is (string=
+       (warn-to-string
+        (call-style-checkers 'defun
+                             '(defun (:property foo bar) () )))
+       "STYLE-WARNING: Non-portable code: (DEFUN (:PROPERTY FOO BAR) ())
+  Function name (:PROPERTY FOO BAR) is not a symbol.
+"
+       ))
+  (is (string=
+       (warn-to-string
+        (call-style-checkers 'defun
+                             '(defun foo bar) ))
+       "STYLE-WARNING: Non-portable code: (DEFUN FOO BAR)
+  Function argument list BAR is not a list.
+"
+       )))
+
+#-ANSI-CL
 (deflint lambda (&rest ignore)
   "LAMBDA expression not inside a FUNCTION special form.")
-
-(deflint-bad-optional functionp (ignore) (allow-special-forms))
 
 (defvar *check-function* t
   "Set to NIL to disable checking for non-portable FUNCTION arguments.")
@@ -232,17 +288,48 @@ named ARGLIST, which holds the entire argument list."
 		     (equal (cadr arg) '(:print-self)))|#))
        (format nil "~S is not a symbol or lambda-expression." arg)))
 
+(test function
+  (is-false (call-style-checkers 'function
+                                 '(function foo) ))
+  (is (string=
+       (warn-to-string
+        (call-style-checkers 'function
+                             '(function (foo)) ))
+       "STYLE-WARNING: Non-portable code: #'(FOO)
+  (FOO) is not a symbol or lambda-expression.
+"
+       )))
+
+#-ANSI-CL
 (deflint-bad-optional get-setf-method (ignore) (for-effect))
 
+#+ANSI-CL
+(deflint-bad-optional get-setf-expansion (ignore) (for-effect))
+
+(test get-setf-expansion
+  (clear-style-checker-suite 'get-setf-expansion 'lint)
+  (is-false (call-style-checkers 'get-setf-expansion
+                                 '(get-setf-expansion (setf car)))))
+
+#-ANSI-cl
 (deflint-bad-optional get-setf-method-multiple-value (ignore) (for-effect))
 
 (deflint let (varlist &rest ignore)
+  (declare (ignore ignore))
   (check-varlist varlist))
 
+(test let
+  (is-false (call-style-checkers 'let
+                                 '(let (foo))))
+  (is-false (call-style-checkers 'let
+                                 '(let ((foo 1) (bar 2))))))
+
 (deflint let* (varlist &rest ignore)
+  (declare (ignore ignore))
   (check-varlist varlist))
 
 (deflint compiler-let (varlist &rest ignore)
+  (declare (ignore ignore))
   (check-varlist varlist))
 
 (defun check-varlist (varlist)
@@ -251,6 +338,7 @@ named ARGLIST, which holds the entire argument list."
 	 (null (cdr var))
 	 (return (format nil "No value specified in binding ~S." var)))))
 
+#||||
 (deflint if (#:ignore #:ignore &optional #:ignore &rest extra)
   (when extra
     "Too many else clauses in IF form."))
@@ -470,3 +558,4 @@ named ARGLIST, which holds the entire argument list."
 
 (deflint-bad-optional apropos-list (ignore &optional ignore)
 		      (do-packages-used-by))
+||||#
