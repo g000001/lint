@@ -110,7 +110,7 @@ named ARGLIST, which holds the entire argument list."
 
 (test deflint-rest
   (setup-test
-    (clear-style-checker-suite 'foo 'lint)
+    (remove-style-checker 'foo 'lint)
     (deflint foo (&rest form)
       (format nil "test1: ~S" form)))
   (is (string=
@@ -122,7 +122,7 @@ named ARGLIST, which holds the entire argument list."
 
 (test deflint-a-b-rest
   (setup-test
-    (clear-style-checker-suite 'foo 'lint)
+    (remove-style-checker 'foo 'lint)
     (deflint foo (a b &rest form)
       (format nil "test2 ~S ~S ~S" a b form)))
   (is (string=
@@ -154,7 +154,7 @@ named ARGLIST, which holds the entire argument list."
 
 (test defscl
   (setup-test
-    (clear-style-checker-suite 'foo 'lint)
+    (remove-style-checker 'foo 'lint)
     (defscl foo))
   (is (string=
        "STYLE-WARNING: Non-portable code: NIL
@@ -182,7 +182,7 @@ named ARGLIST, which holds the entire argument list."
 
 (test deflint-bad-optional
   (setup-test
-    (clear-style-checker-suite 'functionp 'lint)
+    (remove-style-checker 'functionp 'lint)
     (deflint-bad-optional functionp (ignore) (allow-special-forms)))
   (is (string=
        (warn-to-string
@@ -214,7 +214,7 @@ named ARGLIST, which holds the entire argument list."
 
 (test deflint-bad-keywords
   (setup-test
-    (clear-style-checker-suite 'make-sequence 'lint)
+    (remove-style-checker 'make-sequence 'lint)
     (deflint-bad-keywords make-sequence
                           (#:ignore #:ignore &key ((:initial-element #:ignore)))
                           (area)))
@@ -230,7 +230,7 @@ named ARGLIST, which holds the entire argument list."
 ;;; The following section of this file is DEFLINT forms for functions defined in
 ;;; CLtL, in the order that their descriptions appear.
 
-(clear-all-style-checkers)
+(clear-style-checker-suite 'lint)
 
 ;;; This won't get invoked because top-level forms aren't style-checked, sigh...
 (deflint defun (name lambda-list &rest ignore)
@@ -307,7 +307,7 @@ named ARGLIST, which holds the entire argument list."
 (deflint-bad-optional get-setf-expansion (ignore) (for-effect))
 
 (test get-setf-expansion
-  (clear-style-checker-suite 'get-setf-expansion 'lint)
+  (remove-style-checker 'get-setf-expansion 'lint)
   (is-false (call-style-checkers 'get-setf-expansion
                                  '(get-setf-expansion (setf car)))))
 

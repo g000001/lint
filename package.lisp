@@ -8,5 +8,6 @@
            :defscl))
 
 (defpackage :lint-internal
-  (:use :lint :cl :fiveam))
+  (:use :lint :cl :fiveam :style-checker-1)
+  #+SBCL (:import-from :sb-cltl2 :compiler-let))
 
